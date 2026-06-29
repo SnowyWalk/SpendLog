@@ -1,0 +1,195 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CodefServiceType {
+  DEMO
+  API
+  SANDBOX
+}
+
+enum BusinessType {
+  CD
+  BK
+}
+
+enum ClientType {
+  P
+}
+
+enum SourceKind {
+  CARD
+  BANK_ACCOUNT
+}
+
+enum SourceType {
+  CARD_APPROVAL
+  BANK_TRANSACTION
+}
+
+enum TransactionDirection {
+  EXPENSE
+  INCOME
+  TRANSFER
+  REVERSAL
+}
+
+enum CategoryKind {
+  EXPENSE
+  INCOME
+  TRANSFER
+}
+
+enum CategoryRuleMatchType {
+  MERCHANT_CONTAINS
+  DESCRIPTION_CONTAINS
+  REGEX
+}
+
+enum SyncRunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum SyncEventLevel {
+  INFO
+  WARN
+  ERROR
+}
+
+model CodefConnection {
+  id                String                   @id @default(cuid())
+  displayName       String
+  connectedIdHash   String                   @unique
+  serviceType       CodefServiceType         @default(DEMO)
+  isActive          Boolean                  @default(true)
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  linkedAccounts    LinkedFinancialAccount[]
+}
+
+model LinkedFinancialAccount {
+  id                String        @id @default(cuid())
+  codefConnectionId String
+  organization      String
+  businessType      BusinessType
+  clientType        ClientType    @default(P)
+  sourceKind        SourceKind
+  displayName       String
+  maskedIdentifier  String?
+  identifierHash    String
+  loginType         String?
+  isActive          Boolean       @default(true)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  codefConnection   CodefConnection @relation(fields: [codefConnectionId], references: [id], onDelete: Cascade)
+  transactions      Transaction[]
+
+  @@unique([codefConnectionId, organization, businessType, sourceKind, identifierHash])
+  @@index([organization, businessType, sourceKind])
+}
+
+model Transaction {
+  id                       String               @id @default(cuid())
+  linkedFinancialAccountId String
+  sourceType               SourceType
+  occurredAt               DateTime
+  postedDate               DateTime?
+  merchantName             String?
+  description              String?
+  amount                   Decimal              @db.Decimal(14, 2)
+  currency                 String               @default("KRW")
+  direction                TransactionDirection
+  isCanceled               Boolean              @default(false)
+  rawFingerprint           String
+  categoryId               String?
+  manualCategoryId         String?
+  rawData                  Json?
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+
+  linkedFinancialAccount   LinkedFinancialAccount @relation(fields: [linkedFinancialAccountId], references: [id], onDelete: Cascade)
+  category                 Category?              @relation("AutoCategory", fields: [categoryId], references: [id])
+  manualCategory           Category?              @relation("ManualCategory", fields: [manualCategoryId], references: [id])
+
+  @@unique([linkedFinancialAccountId, rawFingerprint])
+  @@index([occurredAt])
+  @@index([categoryId])
+  @@index([linkedFinancialAccountId])
+  @@index([merchantName])
+}
+
+model Category {
+  id                 String        @id @default(cuid())
+  name               String        @unique
+  kind               CategoryKind
+  color              String
+  sortOrder          Int           @default(0)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  autoTransactions   Transaction[] @relation("AutoCategory")
+  manualTransactions Transaction[] @relation("ManualCategory")
+  rules              CategoryRule[]
+}
+
+model CategoryRule {
+  id        String                @id @default(cuid())
+  matchType CategoryRuleMatchType
+  pattern   String
+  categoryId String
+  priority  Int                   @default(100)
+  isActive  Boolean               @default(true)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  category  Category              @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId])
+  @@index([isActive, priority])
+}
+
+model SyncRun {
+  id            String        @id @default(cuid())
+  provider      String
+  organization  String
+  sourceKind    SourceKind
+  lockKey       String
+  startDate     DateTime
+  endDate       DateTime
+  status        SyncRunStatus
+  fetchedCount  Int           @default(0)
+  insertedCount Int           @default(0)
+  updatedCount  Int           @default(0)
+  errorCode     String?
+  errorMessage  String?
+  lockExpiresAt DateTime?
+  startedAt     DateTime      @default(now())
+  finishedAt    DateTime?
+
+  events        SyncEvent[]
+
+  @@index([provider, organization, startDate, endDate, status])
+  @@index([lockKey, status])
+}
+
+model SyncEvent {
+  id        String         @id @default(cuid())
+  syncRunId String
+  level     SyncEventLevel
+  eventType String
+  message   String
+  metadata  Json?
+  createdAt DateTime       @default(now())
+
+  syncRun   SyncRun        @relation(fields: [syncRunId], references: [id], onDelete: Cascade)
+
+  @@index([syncRunId, createdAt])
+}

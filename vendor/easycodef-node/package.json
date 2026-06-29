@@ -1,0 +1,8 @@
+{
+  "name": "easycodef-node",
+  "version": "1.0.5-local",
+  "description": "Local CODEF client compatibility wrapper using native fetch",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "license": "MIT"
+}
