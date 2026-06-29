@@ -1,13 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { assertSessionAndSameOrigin } from "@/lib/auth/guards";
+import { assertSameOrigin } from "@/lib/auth/guards";
 import { normalizeIsoDate } from "@/lib/codef/date";
 import { isCodefProvider, runProviderSync } from "@/lib/codef/sync";
 import { prisma } from "@/lib/db/prisma";
 
 export async function runManualSync(formData: FormData) {
-  await assertSessionAndSameOrigin();
+  await assertSameOrigin();
 
   const provider = String(formData.get("provider") ?? "");
   const startDate = String(formData.get("startDate") ?? "");

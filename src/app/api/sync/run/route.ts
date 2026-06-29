@@ -2,37 +2,16 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { runProviderSync, isCodefProvider } from "@/lib/codef/sync";
 import { normalizeIsoDate } from "@/lib/codef/date";
-import { isTrustedRequestSource } from "@/lib/auth/origin";
-import { SESSION_COOKIE, verifySessionValue } from "@/lib/auth/session";
-
-function isSameOrigin(request: Request) {
-  const host = request.headers.get("host");
-  const origin = request.headers.get("origin");
-  const referer = request.headers.get("referer");
-
-  return isTrustedRequestSource({ host, origin, referer });
-}
 
 function isAuthorized(request: Request) {
   const authHeader = request.headers.get("authorization");
   const cronToken = process.env.SYNC_ADMIN_TOKEN;
 
-  if (
+  return Boolean(
     cronToken &&
     authHeader &&
     authHeader === `Bearer ${cronToken}`
-  ) {
-    return true;
-  }
-
-  const cookie = request.headers
-    .get("cookie")
-    ?.split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${SESSION_COOKIE}=`))
-    ?.split("=")[1];
-
-  return Boolean(cookie && verifySessionValue(decodeURIComponent(cookie)) && isSameOrigin(request));
+  );
 }
 
 export async function POST(request: Request) {

@@ -7,9 +7,14 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      HOSTNAME: 0.0.0.0
+      APP_PUBLIC_HOST: codef.snowywalk.me
       DATABASE_URL: postgresql://${POSTGRES_USER:-budget}:${POSTGRES_PASSWORD:-budget_password}@db:5432/${POSTGRES_DB:-budget}
-    ports:
-      - "${APP_PORT:-3000}:3000"
+    expose:
+      - "3000"
+    networks:
+      - default
+      - proxy
     depends_on:
       db:
         condition: service_healthy
@@ -45,3 +50,7 @@ services:
 
 volumes:
   postgres-data:
+
+networks:
+  proxy:
+    external: true

@@ -1,13 +1,11 @@
 import { SpendingBars } from "@/components/dashboard/spending-bars";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { requirePageSession } from "@/lib/auth/page-guard";
 import { formatCurrency } from "@/lib/format";
 import { getDashboardReport } from "@/lib/reports";
 
 export const dynamic = "force-dynamic";
 
 export default async function AnalyticsPage() {
-  await requirePageSession();
   const { categorySpending, topMerchants, sourceSummary, totalSpend, range } =
     await getDashboardReport();
 

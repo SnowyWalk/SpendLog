@@ -10,20 +10,21 @@ export function SpendingBars({
   return (
     <div className="space-y-3">
       {items.map((item) => {
-        const percent = total > 0 ? (item.amount / total) * 100 : 0;
+        const rawPercent = total > 0 ? (item.amount / total) * 100 : 0;
+        const percent = Math.min(100, Math.max(0, rawPercent));
         return (
           <div key={item.name} className="space-y-1">
-            <div className="flex items-center justify-between text-sm">
-              <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center justify-between gap-3 text-sm">
+              <div className="flex min-w-0 items-center gap-2">
                 <span
-                  className="h-3 w-3 rounded-sm"
+                  className="h-3 w-3 shrink-0 rounded-sm"
                   style={{ backgroundColor: item.color }}
                 />
-                <span>{item.name}</span>
+                <span className="truncate">{item.name}</span>
               </div>
-              <span className="font-medium">{formatCurrency(item.amount)}</span>
+              <span className="shrink-0 font-medium">{formatCurrency(item.amount)}</span>
             </div>
-            <div className="h-2 rounded-sm bg-muted">
+            <div className="h-2 overflow-hidden rounded-sm bg-muted">
               <div
                 className="h-full rounded-sm"
                 style={{ width: `${percent}%`, backgroundColor: item.color }}

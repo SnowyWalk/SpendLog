@@ -1,12 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { requirePageSession } from "@/lib/auth/page-guard";
 import { formatCurrency } from "@/lib/format";
 import { getTransactionsReport } from "@/lib/reports";
 
 export const dynamic = "force-dynamic";
 
 export default async function TransactionsPage() {
-  await requirePageSession();
   const { range, transactions, totalCount, pageSize } = await getTransactionsReport();
 
   return (

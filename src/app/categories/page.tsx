@@ -1,21 +1,27 @@
 import { CategoryRuleMatchType } from "@prisma/client";
-import { Trash2 } from "lucide-react";
-import { createCategoryRule, deleteCategoryRule } from "@/app/categories/actions";
+import { RefreshCw, Trash2 } from "lucide-react";
+import {
+  createCategoryRule,
+  deleteCategoryRule,
+  reapplyCategoryRulesAction,
+} from "@/app/categories/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { requirePageSession } from "@/lib/auth/page-guard";
 import { getCategoriesReport } from "@/lib/reports";
 
 const ruleLabels: Record<CategoryRuleMatchType, string> = {
   MERCHANT_CONTAINS: "가맹점 포함",
   DESCRIPTION_CONTAINS: "설명 포함",
-  REGEX: "정규식",
+  REGEX: "정규식(지원 중단)",
 };
+const creatableRuleTypes = [
+  CategoryRuleMatchType.MERCHANT_CONTAINS,
+  CategoryRuleMatchType.DESCRIPTION_CONTAINS,
+];
 
 export const dynamic = "force-dynamic";
 
 export default async function CategoriesPage() {
-  await requirePageSession();
   const { categories, rules } = await getCategoriesReport();
 
   return (
@@ -53,7 +59,15 @@ export default async function CategoriesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>가맹점 자동분류 규칙</CardTitle>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle>가맹점 자동분류 규칙</CardTitle>
+            <form action={reapplyCategoryRulesAction}>
+              <Button type="submit" variant="outline">
+                <RefreshCw className="h-4 w-4" />
+                재분류
+              </Button>
+            </form>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <form action={createCategoryRule} className="grid gap-2 lg:grid-cols-[1fr_1fr_2fr_100px_auto]">
@@ -73,9 +87,9 @@ export default async function CategoriesPage() {
               className="h-9 rounded-md border bg-background px-3 text-sm"
               defaultValue={CategoryRuleMatchType.MERCHANT_CONTAINS}
             >
-              {Object.entries(ruleLabels).map(([value, label]) => (
+              {creatableRuleTypes.map((value) => (
                 <option key={value} value={value}>
-                  {label}
+                  {ruleLabels[value]}
                 </option>
               ))}
             </select>

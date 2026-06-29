@@ -2,11 +2,15 @@
 
 import { CategoryRuleMatchType } from "@prisma/client";
 import { revalidatePath } from "next/cache";
-import { assertSessionAndSameOrigin } from "@/lib/auth/guards";
+import { assertSameOrigin } from "@/lib/auth/guards";
+import {
+  isSupportedCategoryRuleMatchType,
+  reapplyCategoryRules,
+} from "@/lib/categories/rules";
 import { prisma } from "@/lib/db/prisma";
 
 export async function createCategoryRule(formData: FormData) {
-  await assertSessionAndSameOrigin();
+  await assertSameOrigin();
 
   const categoryId = String(formData.get("categoryId") ?? "");
   const matchType = String(formData.get("matchType") ?? "");
@@ -17,7 +21,7 @@ export async function createCategoryRule(formData: FormData) {
     throw new Error("카테고리와 규칙 문자열은 필수입니다.");
   }
 
-  if (!Object.values(CategoryRuleMatchType).includes(matchType as CategoryRuleMatchType)) {
+  if (!isSupportedCategoryRuleMatchType(matchType)) {
     throw new Error("지원하지 않는 규칙 유형입니다.");
   }
 
@@ -30,16 +34,33 @@ export async function createCategoryRule(formData: FormData) {
     },
   });
 
+  await reapplyCategoryRules(prisma);
+  revalidatePath("/");
+  revalidatePath("/analytics");
   revalidatePath("/categories");
+  revalidatePath("/transactions");
 }
 
 export async function deleteCategoryRule(formData: FormData) {
-  await assertSessionAndSameOrigin();
+  await assertSameOrigin();
   const id = String(formData.get("id") ?? "");
   if (!id) {
     throw new Error("삭제할 규칙이 없습니다.");
   }
 
   await prisma.categoryRule.delete({ where: { id } });
+  await reapplyCategoryRules(prisma);
+  revalidatePath("/");
+  revalidatePath("/analytics");
   revalidatePath("/categories");
+  revalidatePath("/transactions");
+}
+
+export async function reapplyCategoryRulesAction() {
+  await assertSameOrigin();
+  await reapplyCategoryRules(prisma);
+  revalidatePath("/");
+  revalidatePath("/analytics");
+  revalidatePath("/categories");
+  revalidatePath("/transactions");
 }

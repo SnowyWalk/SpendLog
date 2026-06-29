@@ -1,34 +1,34 @@
 import {
   ArrowDownRight,
   ArrowUpRight,
-  CreditCard,
+  CalendarClock,
+  Repeat2,
   ReceiptText,
   TrendingUp,
 } from "lucide-react";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { SpendingBars } from "@/components/dashboard/spending-bars";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { requirePageSession } from "@/lib/auth/page-guard";
 import { formatCurrency } from "@/lib/format";
 import { getDashboardReport } from "@/lib/reports";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  await requirePageSession();
   const {
     range,
     totalSpend,
     totalIncome,
     topCategory,
     categorySpending,
+    recurringExpenses,
+    recurringMonthlyTotal,
     sourceSummary,
     topMerchants,
     recentTransactions,
     dailySpending,
     lastSyncAt,
   } = await getDashboardReport();
-  const transport = categorySpending.find((item) => item.name === "교통")?.amount ?? 0;
 
   return (
     <div className="space-y-6">
@@ -64,10 +64,14 @@ export default async function DashboardPage() {
           helper={topCategory ? `${formatCurrency(topCategory.amount)} 사용` : "분류된 지출 없음"}
         />
         <MetricCard
-          icon={CreditCard}
-          label="교통비"
-          value={formatCurrency(transport)}
-          helper="후불교통 승인 포함"
+          icon={Repeat2}
+          label="고정 지출 후보"
+          value={formatCurrency(recurringMonthlyTotal)}
+          helper={
+            recurringExpenses.length > 0
+              ? `${recurringExpenses.length}개 반복 결제 감지`
+              : "반복 결제 후보 없음"
+          }
         />
       </section>
 
@@ -89,15 +93,15 @@ export default async function DashboardPage() {
             {sourceSummary.map((source) => (
               <div
                 key={source.name}
-                className="flex items-center justify-between rounded-md border px-3 py-2"
+                className="flex min-w-0 items-center justify-between gap-3 rounded-md border px-3 py-2"
               >
-                <div>
-                  <div className="text-sm font-medium">{source.name}</div>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{source.name}</div>
                   <div className="text-xs text-muted-foreground">
                     {source.count}건
                   </div>
                 </div>
-                <div className="text-sm font-semibold">
+                <div className="shrink-0 text-sm font-semibold">
                   {formatCurrency(source.amount)}
                 </div>
               </div>
@@ -107,6 +111,43 @@ export default async function DashboardPage() {
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>고정 지출 후보</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {recurringExpenses.length === 0 ? (
+                <div className="rounded-md border px-3 py-6 text-center text-sm text-muted-foreground">
+                  최근 4개월 기준 반복 결제 후보가 없습니다.
+                </div>
+              ) : recurringExpenses.map((expense) => (
+                <div
+                  key={expense.name}
+                  className="grid grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border px-3 py-2 text-sm"
+                >
+                  <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{expense.name}</div>
+                    <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                        style={{ backgroundColor: expense.categoryColor }}
+                      />
+                      <span className="truncate">
+                        {expense.category} · 최근 {expense.monthCount}개월 반복
+                      </span>
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right font-medium">
+                    {formatCurrency(expense.averageAmount)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>상위 가맹점</CardTitle>
@@ -120,11 +161,11 @@ export default async function DashboardPage() {
             ) : topMerchants.map((merchant, index) => (
                 <div
                   key={merchant.name}
-                  className="grid grid-cols-[32px_1fr_auto] items-center gap-3 rounded-md border px-3 py-2 text-sm"
+                  className="grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border px-3 py-2 text-sm"
                 >
                   <div className="text-muted-foreground">{index + 1}</div>
-                  <div>{merchant.name}</div>
-                  <div className="font-medium">{formatCurrency(merchant.amount)}</div>
+                  <div className="truncate">{merchant.name}</div>
+                  <div className="shrink-0 font-medium">{formatCurrency(merchant.amount)}</div>
                 </div>
               ))}
             </div>
@@ -144,16 +185,16 @@ export default async function DashboardPage() {
               ) : recentTransactions.map((transaction) => (
                 <div
                   key={transaction.id}
-                  className="grid grid-cols-[20px_1fr_auto] items-center gap-3 rounded-md border px-3 py-2 text-sm"
+                  className="grid grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border px-3 py-2 text-sm"
                 >
                   <ReceiptText className="h-4 w-4 text-muted-foreground" />
-                  <div>
-                    <div className="font-medium">{transaction.name}</div>
-                    <div className="text-xs text-muted-foreground">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{transaction.name}</div>
+                    <div className="truncate text-xs text-muted-foreground">
                       {transaction.dateTime} · {transaction.category}
                     </div>
                   </div>
-                  <div className="font-medium">{formatCurrency(transaction.amount)}</div>
+                  <div className="shrink-0 font-medium">{formatCurrency(transaction.amount)}</div>
                 </div>
               ))}
             </div>
@@ -173,10 +214,10 @@ export default async function DashboardPage() {
               </div>
             ) : dailySpending.map((day) => (
               <div key={day.day} className="space-y-2">
-                <div className="flex h-32 items-end rounded-md bg-muted p-1">
+                <div className="flex h-32 items-end overflow-hidden rounded-md bg-muted p-1">
                   <div
                     className="w-full rounded-sm bg-primary"
-                    style={{ height: `${Math.max(8, day.percent)}%` }}
+                    style={{ height: `${Math.min(100, Math.max(8, day.percent))}%` }}
                   />
                 </div>
                 <div className="text-center text-xs text-muted-foreground">

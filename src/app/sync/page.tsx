@@ -2,7 +2,6 @@ import { RefreshCw } from "lucide-react";
 import { runManualSync } from "@/app/sync/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { requirePageSession } from "@/lib/auth/page-guard";
 import { getSyncReport } from "@/lib/reports";
 
 const providers = [
@@ -14,7 +13,6 @@ const providers = [
 export const dynamic = "force-dynamic";
 
 export default async function SyncPage() {
-  await requirePageSession();
   const { range, runs, accounts } = await getSyncReport();
 
   return (

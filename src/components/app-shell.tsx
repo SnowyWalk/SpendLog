@@ -1,8 +1,10 @@
 import Link from "next/link";
 import {
   BarChart3,
+  CalendarClock,
   FolderKanban,
   Home,
+  Lightbulb,
   RefreshCw,
   Settings,
   Table2,
@@ -12,6 +14,8 @@ const navItems = [
   { href: "/", label: "대시보드", icon: Home },
   { href: "/transactions", label: "거래내역", icon: Table2 },
   { href: "/analytics", label: "분석", icon: BarChart3 },
+  { href: "/insights", label: "인사이트", icon: Lightbulb },
+  { href: "/recurring", label: "고정지출", icon: CalendarClock },
   { href: "/categories", label: "카테고리", icon: FolderKanban },
   { href: "/sync", label: "동기화", icon: RefreshCw },
   { href: "/settings", label: "설정", icon: Settings },

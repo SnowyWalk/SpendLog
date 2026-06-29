@@ -16,11 +16,6 @@ vi.mock("@/lib/codef/sync", () => ({
   })),
 }));
 
-vi.mock("@/lib/auth/session", () => ({
-  SESSION_COOKIE: "budget_session",
-  verifySessionValue: (value?: string) => value === "valid-session",
-}));
-
 function syncRequest(headers: HeadersInit) {
   return new Request("http://example.com/api/sync/run", {
     method: "POST",
@@ -55,7 +50,7 @@ describe("/api/sync/run authorization", () => {
     });
   });
 
-  it("allows verified session requests from the same origin", async () => {
+  it("rejects session-cookie requests without a bearer token", async () => {
     const { POST } = await import("@/app/api/sync/run/route");
     const response = await POST(
       syncRequest({
@@ -64,10 +59,10 @@ describe("/api/sync/run authorization", () => {
       })
     );
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(401);
   });
 
-  it("rejects malformed origin headers instead of throwing", async () => {
+  it("rejects malformed origin headers without a bearer token", async () => {
     const { POST } = await import("@/app/api/sync/run/route");
     const response = await POST(
       syncRequest({

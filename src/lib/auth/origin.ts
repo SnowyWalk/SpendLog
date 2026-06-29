@@ -1,3 +1,24 @@
+export function getTrustedAppHost() {
+  return process.env.APP_PUBLIC_HOST?.trim().toLocaleLowerCase("en-US") || null;
+}
+
+function normalizeHost(host?: string | null) {
+  return host?.split(",")[0]?.trim().toLocaleLowerCase("en-US") || null;
+}
+
+export function isTrustedHost({
+  host,
+}: {
+  host: string | null;
+}) {
+  const trustedHost = getTrustedAppHost();
+  if (!trustedHost) {
+    return false;
+  }
+
+  return normalizeHost(host) === trustedHost;
+}
+
 export function isTrustedRequestSource({
   host,
   origin,
@@ -7,15 +28,27 @@ export function isTrustedRequestSource({
   origin: string | null;
   referer: string | null;
 }) {
-  if (!host) {
+  const requestHost = normalizeHost(host);
+  if (!requestHost || !isTrustedHost({ host })) {
     return false;
   }
 
   try {
-    if (origin && new URL(origin).host !== host) {
+    const originHost = normalizeHost(origin ? new URL(origin).host : null);
+    const refererHost = normalizeHost(referer ? new URL(referer).host : null);
+    if (
+      originHost &&
+      originHost !== requestHost &&
+      !isTrustedHost({ host: originHost })
+    ) {
       return false;
     }
-    if (!origin && referer && new URL(referer).host !== host) {
+    if (
+      !originHost &&
+      refererHost &&
+      refererHost !== requestHost &&
+      !isTrustedHost({ host: refererHost })
+    ) {
       return false;
     }
   } catch {
