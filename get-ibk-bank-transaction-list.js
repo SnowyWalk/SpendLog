@@ -3,7 +3,6 @@ require('dotenv').config({ quiet: true });
 const {
     EasyCodef,
     EasyCodefConstant,
-    EasyCodefUtil,
 } = require('easycodef-node');
 
 const TARGET_YEAR = 2026;
@@ -149,10 +148,8 @@ function createCodef() {
 async function main() {
     const {
         CODEF_CONNECTED_ID,
-        CODEF_PUBLIC_KEY,
         BIRTH_DATE,
         IBK_ACCOUNT,
-        IBK_ACCOUNT_PASSWORD,
     } = process.env;
 
     if (!CODEF_CONNECTED_ID) {
@@ -176,13 +173,6 @@ async function main() {
         orderBy: ORDER_BY,
         inquiryType: INQUIRY_TYPE,
     };
-
-    if (IBK_ACCOUNT_PASSWORD) {
-        params.accountPassword = EasyCodefUtil.encryptRSA(
-            CODEF_PUBLIC_KEY,
-            IBK_ACCOUNT_PASSWORD
-        );
-    }
 
     if (BIRTH_DATE) {
         params.birthDate = BIRTH_DATE;
