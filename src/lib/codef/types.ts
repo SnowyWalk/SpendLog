@@ -14,6 +14,7 @@ export type LinkedAccountInput = {
   displayName: string;
   maskedIdentifier?: string;
   identifierHash: string;
+  alternateIdentifierHashes?: string[];
   loginType?: string;
 };
 

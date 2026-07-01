@@ -21,6 +21,31 @@ describe("CODEF normalization", () => {
     expect(JSON.stringify(transaction.rawData)).not.toContain("approval-secret");
   });
 
+  it("normalizes Samsung card account identity by the last four digits", () => {
+    const detailed = normalizeCardApproval("0303", {
+      resUsedDate: "20260629",
+      resUsedTime: "121314",
+      resCardNo1: "123456******9876",
+      resCardName: "삼성 테스트카드",
+      resMemberStoreName: "테스트상점",
+      resUsedAmount: "12,300",
+    });
+    const short = normalizeCardApproval("0303", {
+      resUsedDate: "20260630",
+      resUsedTime: "121314",
+      resCardNo1: "9876",
+      resCardName: "삼성 테스트카드",
+      resMemberStoreName: "다른상점",
+      resUsedAmount: "4,500",
+    });
+
+    expect(detailed.linkedAccount.identifierHash).toBe(
+      short.linkedAccount.identifierHash
+    );
+    expect(detailed.linkedAccount.maskedIdentifier).toBe("123456******9876");
+    expect(detailed.linkedAccount.alternateIdentifierHashes).toHaveLength(1);
+  });
+
   it("normalizes IBK outgoing transactions as expenses", () => {
     const transaction = normalizeIbkTransaction(
       {

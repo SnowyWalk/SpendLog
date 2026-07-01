@@ -35,6 +35,26 @@ function pickBankDescription(row: Record<string, string>) {
   ].find(Boolean);
 }
 
+function digitsOnly(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function normalizeCardAccountIdentifier(organization: "0303" | "0305", cardToken: string) {
+  const legacyHash = stableHash([organization, cardToken]);
+  if (organization !== "0303") {
+    return { identifierHash: legacyHash, alternateIdentifierHashes: [] };
+  }
+
+  const digits = digitsOnly(cardToken);
+  const canonicalToken = digits.length >= 4 ? digits.slice(-4) : cardToken.trim();
+  const identifierHash = stableHash([organization, canonicalToken]);
+  return {
+    identifierHash,
+    alternateIdentifierHashes:
+      legacyHash === identifierHash ? [] : [legacyHash],
+  };
+}
+
 export function normalizeCardApproval(
   organization: "0303" | "0305",
   row: Record<string, string>
@@ -46,6 +66,7 @@ export function normalizeCardApproval(
   const amount = parseRequiredAmount(row.resUsedAmount || row.resKRWAmt, "resUsedAmount");
   const isCanceled = row.resCancelYN === "1" || row.resCancelYN === "Y";
   const merchantName = row.resMemberStoreName || "카드 승인";
+  const accountIdentifier = normalizeCardAccountIdentifier(organization, cardToken);
 
   return {
     linkedAccount: {
@@ -54,7 +75,8 @@ export function normalizeCardApproval(
       sourceKind: SourceKind.CARD,
       displayName: organization === "0303" ? "Samsung Card" : "BC Card",
       maskedIdentifier: cardToken,
-      identifierHash: stableHash([organization, cardToken]),
+      identifierHash: accountIdentifier.identifierHash,
+      alternateIdentifierHashes: accountIdentifier.alternateIdentifierHashes,
     },
     sourceType: "CARD_APPROVAL",
     occurredAt: fromCodefDateTime(row.resUsedDate, row.resUsedTime),
