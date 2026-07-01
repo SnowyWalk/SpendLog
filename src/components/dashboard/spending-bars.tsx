@@ -8,7 +8,7 @@ export function SpendingBars({
   total: number;
 }) {
   return (
-    <div className="space-y-3">
+    <div className="min-w-0 space-y-3">
       {items.map((item) => {
         const rawPercent = total > 0 ? (item.amount / total) * 100 : 0;
         const percent = Math.min(100, Math.max(0, rawPercent));
@@ -24,9 +24,9 @@ export function SpendingBars({
               </div>
               <span className="shrink-0 font-medium">{formatCurrency(item.amount)}</span>
             </div>
-            <div className="h-2 overflow-hidden rounded-sm bg-muted">
+            <div className="h-2 max-w-full overflow-hidden rounded-sm bg-muted">
               <div
-                className="h-full rounded-sm"
+                className="h-full max-w-full rounded-sm"
                 style={{ width: `${percent}%`, backgroundColor: item.color }}
               />
             </div>

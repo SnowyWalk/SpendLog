@@ -1,11 +1,15 @@
 import "server-only";
 import { TransactionDirection, type Prisma } from "@prisma/client";
+import { buildAttentionItems } from "@/lib/attention/selector";
+import { getMonthlyBudgetReport } from "@/lib/budget/report";
 import { prisma } from "@/lib/db/prisma";
+import { buildSeoulDate, seoulDateParts, seoulDayOfWeek } from "@/lib/recurring/date";
+import { getManagedRecurringExpenses } from "@/lib/recurring/report";
+import { detectCommuteTransport } from "@/lib/transport/commute";
 import {
-  nextExpectedDate,
-  seoulDateParts,
-  seoulDayOfWeek,
-} from "@/lib/recurring/date";
+  parseTransactionFilters,
+  type TransactionFilterInput,
+} from "@/lib/transactions/filters";
 
 const SEOUL_TIME_ZONE = "Asia/Seoul";
 const UNCATEGORIZED = {
@@ -62,22 +66,12 @@ function monthRangeWithOffset(offset: number, now = new Date(), endDay?: number)
   };
 }
 
-function lookbackStart(months: number, now = new Date()) {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: SEOUL_TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-  });
-  const [year, month] = formatter.format(now).split("-").map(Number);
-  return new Date(Date.UTC(year, month - months, 1, -9));
-}
-
-function monthKey(date: Date) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: SEOUL_TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-  }).format(date);
+function commuteLookbackRange(now = new Date(), months = 6) {
+  const parts = seoulDateParts(now);
+  return {
+    start: buildSeoulDate(parts.year, parts.month - months + 1, 1),
+    end: new Date(now.getTime()),
+  };
 }
 
 function toNumber(value: Prisma.Decimal | number | string) {
@@ -119,113 +113,6 @@ function positiveExpenseAmount(transaction: TransactionWithRelations) {
   return Math.max(0, expenseAmount(transaction));
 }
 
-function recurringExpenseKey(transaction: TransactionWithRelations) {
-  const name = transaction.merchantName || transaction.description;
-  return name?.replace(/\s+/g, " ").trim() ?? "";
-}
-
-function detectRecurringExpenses(transactions: TransactionWithRelations[]) {
-  const groups = new Map<
-    string,
-    {
-      name: string;
-      category: string;
-      categoryColor: string;
-      amounts: number[];
-      days: number[];
-      months: Set<string>;
-      lastPaidAt: Date;
-      source: string;
-    }
-  >();
-
-  for (const transaction of transactions) {
-    const key = recurringExpenseKey(transaction);
-    const amount = expenseAmount(transaction);
-    if (!key || amount < 1000) {
-      continue;
-    }
-
-    const category = effectiveCategory(transaction);
-    const item = groups.get(key) ?? {
-      name: key,
-      category: category.name,
-      categoryColor: category.color,
-      amounts: [],
-      days: [],
-      months: new Set<string>(),
-      lastPaidAt: transaction.occurredAt,
-      source: transaction.linkedFinancialAccount.displayName,
-    };
-
-    item.amounts.push(amount);
-    item.days.push(seoulDateParts(transaction.occurredAt).day);
-    item.months.add(monthKey(transaction.occurredAt));
-    if (transaction.occurredAt > item.lastPaidAt) {
-      item.lastPaidAt = transaction.occurredAt;
-      item.category = category.name;
-      item.categoryColor = category.color;
-      item.source = transaction.linkedFinancialAccount.displayName;
-    }
-    groups.set(key, item);
-  }
-
-  return [...groups.values()]
-    .map((item) => {
-      const averageAmount =
-        item.amounts.reduce((sum, amount) => sum + amount, 0) / item.amounts.length;
-      const maxDeviation = Math.max(
-        ...item.amounts.map((amount) => Math.abs(amount - averageAmount))
-      );
-      const averageDay = item.days.reduce((sum, day) => sum + day, 0) / item.days.length;
-      return {
-        ...item,
-        averageAmount,
-        averageDay,
-        maxDeviation,
-        monthCount: item.months.size,
-        transactionCount: item.amounts.length,
-      };
-    })
-    .filter(
-      (item) =>
-        item.monthCount >= 2 &&
-        item.amounts.length >= 2 &&
-        item.maxDeviation <= Math.max(2000, item.averageAmount * 0.15)
-    )
-    .sort((a, b) => b.averageAmount - a.averageAmount)
-    .map((item) => ({
-      name: item.name,
-      category: item.category,
-      categoryColor: item.categoryColor,
-      averageAmount: Math.round(item.averageAmount),
-      monthCount: item.monthCount,
-      transactionCount: item.transactionCount,
-      lastPaidAt: item.lastPaidAt,
-      nextExpectedAt: nextExpectedDate(item.lastPaidAt, item.averageDay),
-      source: item.source,
-    }));
-}
-
-async function getRecurringExpenseCandidates(limit?: number) {
-  const range = monthRange();
-  const transactions = await prisma.transaction.findMany({
-    where: {
-      occurredAt: { gte: lookbackStart(6), lte: range.end },
-      direction: TransactionDirection.EXPENSE,
-      isCanceled: false,
-    },
-    orderBy: { occurredAt: "desc" },
-    include: {
-      category: true,
-      manualCategory: true,
-      linkedFinancialAccount: true,
-    },
-  });
-  const expenses = detectRecurringExpenses(transactions);
-  return typeof limit === "number" ? expenses.slice(0, limit) : expenses;
-}
-
 function signedExpenseFromGroup(group: {
   direction: TransactionDirection;
   isCanceled: boolean;
@@ -249,10 +136,13 @@ export async function getDashboardReport() {
     categoryGroups,
     sourceGroups,
     merchantGroups,
-    recurringExpenseCandidates,
+    uncategorizedGroups,
+    uncategorizedSummary,
+    recurringReport,
     categories,
     accounts,
     lastSync,
+    latestSync,
   ] = await Promise.all([
     prisma.transaction.findMany({
       where: { occurredAt: { gte: range.start, lte: range.end } },
@@ -291,12 +181,40 @@ export async function getDashboardReport() {
       orderBy: { _sum: { amount: "desc" } },
       take: 8,
     }),
-    getRecurringExpenseCandidates(),
+    prisma.transaction.groupBy({
+      by: ["merchantName"],
+      where: {
+        occurredAt: { gte: range.start, lte: range.end },
+        direction: TransactionDirection.EXPENSE,
+        isCanceled: false,
+        categoryId: null,
+        manualCategoryId: null,
+      },
+      _sum: { amount: true },
+      _count: { _all: true },
+      orderBy: { _sum: { amount: "desc" } },
+      take: 5,
+    }),
+    prisma.transaction.aggregate({
+      where: {
+        occurredAt: { gte: range.start, lte: range.end },
+        direction: TransactionDirection.EXPENSE,
+        isCanceled: false,
+        categoryId: null,
+        manualCategoryId: null,
+      },
+      _sum: { amount: true },
+      _count: { _all: true },
+    }),
+    getManagedRecurringExpenses(),
     prisma.category.findMany(),
     prisma.linkedFinancialAccount.findMany(),
     prisma.syncRun.findFirst({
       where: { status: "SUCCESS" },
       orderBy: { finishedAt: "desc" },
+    }),
+    prisma.syncRun.findFirst({
+      orderBy: { startedAt: "desc" },
     }),
   ]);
 
@@ -344,11 +262,8 @@ export async function getDashboardReport() {
   }
 
   const categorySpending = [...categoryMap.values()].sort((a, b) => b.amount - a.amount);
-  const recurringMonthlyTotal = recurringExpenseCandidates.reduce(
-    (sum, item) => sum + item.averageAmount,
-    0
-  );
-  const recurringExpenses = recurringExpenseCandidates.slice(0, 5);
+  const recurringMonthlyTotal = recurringReport.monthlyTotal;
+  const recurringExpenses = recurringReport.expenses.slice(0, 5);
   const topMerchants = merchantGroups.map((merchant) => ({
     name: merchant.merchantName || "이름 없음",
     amount: toNumber(merchant._sum.amount ?? 0),
@@ -372,6 +287,49 @@ export async function getDashboardReport() {
     })
     .reverse();
 
+  const rangeEndParts = seoulDateParts(range.end);
+  const daysInMonth = new Date(
+    Date.UTC(rangeEndParts.year, rangeEndParts.month, 0)
+  ).getUTCDate();
+  const projectedSpend = Math.round(
+    (totalSpend / Math.max(1, rangeEndParts.day)) * daysInMonth
+  );
+  const budgetReport = await getMonthlyBudgetReport({
+    totalSpend,
+    projectedSpend,
+    recurringMonthlyTotal,
+  });
+  const uncategorizedMerchants = uncategorizedGroups.map((group) => ({
+    name: group.merchantName || "이름 없음",
+    amount: toNumber(group._sum.amount ?? 0),
+    count: group._count._all,
+  }));
+  const attentionItems = buildAttentionItems({
+    now: new Date(),
+    budget: {
+      status: budgetReport.status,
+      targetAmount: budgetReport.targetAmount,
+      spentAmount: budgetReport.spentAmount,
+      projectedAmount: budgetReport.projectedAmount,
+      remainingAmount: budgetReport.remainingAmount,
+    },
+    recurring: recurringReport.expenses.map((expense) => ({
+      name: expense.name,
+      amount: expense.averageAmount,
+      nextExpectedAt: expense.nextExpectedAt,
+    })),
+    sync: {
+      latestStatus: latestSync?.status ?? null,
+      latestErrorMessage: latestSync?.errorMessage ?? null,
+      lastSuccessAt: lastSync?.finishedAt ?? null,
+    },
+    uncategorized: {
+      count: uncategorizedSummary._count._all,
+      amount: toNumber(uncategorizedSummary._sum.amount ?? 0),
+      topMerchantName: uncategorizedMerchants[0]?.name ?? null,
+    },
+  }).slice(0, 5);
+
   return {
     range,
     totalSpend,
@@ -380,40 +338,48 @@ export async function getDashboardReport() {
     topCategory: categorySpending[0],
     recurringExpenses,
     recurringMonthlyTotal,
+    budgetReport,
     topMerchants,
     sourceSummary: [...sourceMap.values()].sort((a, b) => b.amount - a.amount),
     recentTransactions: recentTransactions.map(formatTransactionRow),
     dailySpending,
+    attentionItems,
     lastSyncAt: lastSync?.finishedAt ?? null,
   };
 }
 
 export async function getRecurringExpensesReport() {
-  const expenses = await getRecurringExpenseCandidates();
-  const monthlyTotal = expenses.reduce((sum, item) => sum + item.averageAmount, 0);
-  const categoryMap = new Map<
-    string,
-    { name: string; color: string; amount: number; count: number }
-  >();
+  const [recurringReport, categories] = await Promise.all([
+    getManagedRecurringExpenses(),
+    prisma.category.findMany({
+      where: { kind: "EXPENSE" },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    }),
+  ]);
 
-  for (const expense of expenses) {
-    const category = categoryMap.get(expense.category) ?? {
-      name: expense.category,
-      color: expense.categoryColor,
-      amount: 0,
-      count: 0,
-    };
-    category.amount += expense.averageAmount;
-    category.count += 1;
-    categoryMap.set(expense.category, category);
-  }
+  return { ...recurringReport, categories };
+}
 
-  return {
-    expenses,
-    monthlyTotal,
-    yearlyTotal: monthlyTotal * 12,
-    categorySummary: [...categoryMap.values()].sort((a, b) => b.amount - a.amount),
-  };
+export async function getCommuteReport(now = new Date()) {
+  const range = commuteLookbackRange(now);
+  const transactions = await prisma.transaction.findMany({
+    where: {
+      occurredAt: { gte: range.start, lte: range.end },
+      direction: TransactionDirection.EXPENSE,
+      isCanceled: false,
+    },
+    orderBy: { occurredAt: "asc" },
+    select: {
+      occurredAt: true,
+      merchantName: true,
+      description: true,
+      amount: true,
+      direction: true,
+      isCanceled: true,
+    },
+  });
+
+  return detectCommuteTransport(transactions);
 }
 
 export async function getInsightsReport() {
@@ -425,7 +391,8 @@ export async function getInsightsReport() {
       : currentRange.daysInMonth;
   const previousRange = monthRangeWithOffset(-1, new Date(), elapsedDays);
 
-  const [currentTransactions, previousTransactions, recurringExpenses] = await Promise.all([
+  const [currentTransactions, previousTransactions, recurringReport, commuteReport] =
+    await Promise.all([
     prisma.transaction.findMany({
       where: { occurredAt: { gte: currentRange.start, lte: currentRange.end } },
       orderBy: { occurredAt: "desc" },
@@ -444,8 +411,9 @@ export async function getInsightsReport() {
         linkedFinancialAccount: true,
       },
     }),
-    getRecurringExpenseCandidates(),
-  ]);
+      getManagedRecurringExpenses(),
+      getCommuteReport(),
+    ]);
 
   const currentExpenses = currentTransactions.filter(
     (transaction) => positiveExpenseAmount(transaction) > 0
@@ -462,11 +430,13 @@ export async function getInsightsReport() {
     0
   );
   const projectedSpend = Math.round((totalSpend / elapsedDays) * currentRange.daysInMonth);
-  const recurringMonthlyTotal = recurringExpenses.reduce(
-    (sum, expense) => sum + expense.averageAmount,
-    0
-  );
+  const recurringMonthlyTotal = recurringReport.monthlyTotal;
   const variableSpend = Math.max(0, projectedSpend - recurringMonthlyTotal);
+  const budgetReport = await getMonthlyBudgetReport({
+    totalSpend,
+    projectedSpend,
+    recurringMonthlyTotal,
+  });
 
   const categoryMap = new Map<
     string,
@@ -569,12 +539,14 @@ export async function getInsightsReport() {
     totalSpend,
     previousSpend,
     projectedSpend,
+    budgetReport,
     spendDelta: totalSpend - previousSpend,
     foodSpend,
     foodDailyAverage,
     foodProjected,
     recurringMonthlyTotal,
     variableSpend,
+    commuteReport,
     recurringRatio:
       projectedSpend > 0 ? Math.round((recurringMonthlyTotal / projectedSpend) * 100) : 0,
     topMerchant: topMerchant
@@ -594,12 +566,63 @@ export async function getInsightsReport() {
   };
 }
 
-export async function getTransactionsReport() {
+function transactionFilterRange(filters: { startDate: string; endDate: string }) {
+  return {
+    start: new Date(`${filters.startDate}T00:00:00+09:00`),
+    end: new Date(`${filters.endDate}T23:59:59+09:00`),
+  };
+}
+
+function buildTransactionWhere(filters: ReturnType<typeof parseTransactionFilters>) {
+  const range = transactionFilterRange(filters);
+  const and: Prisma.TransactionWhereInput[] = [
+    { occurredAt: { gte: range.start, lte: range.end } },
+  ];
+
+  if (filters.q) {
+    and.push({
+      OR: [
+        { merchantName: { contains: filters.q, mode: "insensitive" } },
+        { description: { contains: filters.q, mode: "insensitive" } },
+      ],
+    });
+  }
+
+  if (filters.categoryId) {
+    and.push({
+      OR: [
+        { manualCategoryId: filters.categoryId },
+        { manualCategoryId: null, categoryId: filters.categoryId },
+      ],
+    });
+  }
+
+  if (filters.sourceId) {
+    and.push({ linkedFinancialAccountId: filters.sourceId });
+  }
+
+  if (filters.direction) {
+    and.push({ direction: filters.direction });
+  }
+
+  if (filters.uncategorized) {
+    and.push({ categoryId: null, manualCategoryId: null });
+  }
+
+  return { AND: and } satisfies Prisma.TransactionWhereInput;
+}
+
+export async function getTransactionsReport(input?: TransactionFilterInput) {
   const range = monthRange();
+  const filters = parseTransactionFilters(input, {
+    startDate: range.startInput,
+    endDate: range.endInput,
+  });
+  const where = buildTransactionWhere(filters);
   const pageSize = 300;
-  const [transactions, totalCount] = await Promise.all([
+  const [transactions, totalCount, categories, accounts] = await Promise.all([
     prisma.transaction.findMany({
-      where: { occurredAt: { gte: range.start, lte: range.end } },
+      where,
       orderBy: { occurredAt: "desc" },
       include: {
         category: true,
@@ -609,15 +632,26 @@ export async function getTransactionsReport() {
       take: pageSize,
     }),
     prisma.transaction.count({
-      where: { occurredAt: { gte: range.start, lte: range.end } },
+      where,
+    }),
+    prisma.category.findMany({
+      where: { kind: "EXPENSE" },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    }),
+    prisma.linkedFinancialAccount.findMany({
+      where: { isActive: true },
+      orderBy: [{ sourceKind: "asc" }, { displayName: "asc" }],
     }),
   ]);
 
   return {
     range,
+    filters,
     transactions: transactions.map(formatTransactionRow),
     totalCount,
     pageSize,
+    categories,
+    accounts,
   };
 }
 
@@ -679,10 +713,16 @@ function formatTransactionRow(transaction: TransactionWithRelations) {
       minute: "2-digit",
     }).format(transaction.occurredAt),
     name: transaction.merchantName || transaction.description || "이름 없음",
+    merchantName: transaction.merchantName,
+    description: transaction.description,
     category: category.name,
+    categoryId: category.id === UNCATEGORIZED.id ? null : category.id,
+    autoCategoryId: transaction.categoryId,
+    manualCategoryId: transaction.manualCategoryId,
     categoryColor: category.color,
     amount: toNumber(transaction.amount),
     direction: transaction.direction,
+    sourceId: transaction.linkedFinancialAccountId,
     source: transaction.linkedFinancialAccount.displayName,
     isCanceled: transaction.isCanceled,
   };

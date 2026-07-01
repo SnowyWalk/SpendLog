@@ -1,13 +1,16 @@
 import {
   AlertCircle,
   Beef,
+  Bus,
   Gauge,
   PieChart,
   Store,
+  Target,
   TrendingUp,
   WalletCards,
 } from "lucide-react";
 import Link from "next/link";
+import { BudgetProgress } from "@/components/dashboard/budget-progress";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { SpendingBars } from "@/components/dashboard/spending-bars";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +26,7 @@ function signedCurrency(value: number) {
 
 export default async function InsightsPage() {
   const report = await getInsightsReport();
+  const hasBudgetTarget = report.budgetReport.targetAmount !== null;
 
   return (
     <div className="space-y-4">
@@ -33,12 +37,24 @@ export default async function InsightsPage() {
         </p>
       </div>
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <MetricCard
           icon={Gauge}
           label="월말 예상 지출"
           value={formatCurrency(report.projectedSpend)}
           helper={`${report.elapsedDays}일 기준 현재 ${formatCurrency(report.totalSpend)}`}
+        />
+        <MetricCard
+          icon={Target}
+          label="목표 대비"
+          value={hasBudgetTarget ? `${report.budgetReport.progressPercent}%` : "미설정"}
+          helper={
+            hasBudgetTarget && report.budgetReport.targetAmount === 0
+              ? "기록 전용 모드"
+              : hasBudgetTarget
+              ? `남은 예산 ${formatCurrency(report.budgetReport.remainingAmount ?? 0)}`
+              : "설정에서 월 목표를 지정"
+          }
         />
         <MetricCard
           icon={Beef}
@@ -59,6 +75,8 @@ export default async function InsightsPage() {
           helper={`${report.previousRange.label} ${formatCurrency(report.previousSpend)}`}
         />
       </section>
+
+      <BudgetProgress report={report.budgetReport} />
 
       <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <Card>
@@ -107,6 +125,32 @@ export default async function InsightsPage() {
         </Card>
 
         <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>출퇴근 교통비 추정</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-start gap-3 rounded-md border px-3 py-3 text-sm">
+                <Bus className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                <div className="min-w-0">
+                  <div className="font-medium">
+                    {formatCurrency(report.commuteReport.monthlyEstimate)}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    1회 출퇴근 평균{" "}
+                    {formatCurrency(report.commuteReport.averageCommuteDayCost)} x{" "}
+                    {report.commuteReport.projectionCommuteDaysPerMonth}일
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    {report.commuteReport.confidence === "none"
+                      ? "후불교통, 티머니, 버스, 지하철 거래가 충분히 쌓이면 자동으로 추정합니다."
+                      : `${report.commuteReport.sampleMonths}개월 · ${report.commuteReport.sampleDays}일 표본 · 신뢰도 ${report.commuteReport.confidence}`}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>지출 집중도</CardTitle>
@@ -168,10 +212,10 @@ export default async function InsightsPage() {
                     </div>
                   ))}
                   <Link
-                    href="/categories"
+                    href="/transactions?uncategorized=1"
                     className="inline-flex h-9 items-center rounded-md border bg-background px-3 text-sm font-medium hover:bg-muted"
                   >
-                    분류 규칙 관리
+                    미분류 거래 정리
                   </Link>
                 </div>
               )}

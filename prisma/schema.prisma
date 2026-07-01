@@ -63,6 +63,12 @@ enum SyncEventLevel {
   ERROR
 }
 
+enum RecurringExpenseRuleKind {
+  MANUAL
+  EXCLUSION
+  CONFIRMED
+}
+
 model CodefConnection {
   id                String                   @id @default(cuid())
   displayName       String
@@ -138,6 +144,7 @@ model Category {
   autoTransactions   Transaction[] @relation("AutoCategory")
   manualTransactions Transaction[] @relation("ManualCategory")
   rules              CategoryRule[]
+  recurringExpenseRules RecurringExpenseRule[]
 }
 
 model CategoryRule {
@@ -192,4 +199,35 @@ model SyncEvent {
   syncRun   SyncRun        @relation(fields: [syncRunId], references: [id], onDelete: Cascade)
 
   @@index([syncRunId, createdAt])
+}
+
+model RecurringExpenseRule {
+  id             String                   @id @default(cuid())
+  kind           RecurringExpenseRuleKind
+  scopeKey       String                   @default("global")
+  matchKey       String
+  matchPattern   String?
+  displayName    String
+  categoryId     String?
+  expectedAmount Decimal?                 @db.Decimal(14, 2)
+  expectedDay    Int?
+  sourceHint     String?
+  note           String?
+  isActive       Boolean                  @default(true)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  category       Category?                @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([kind, isActive])
+  @@index([scopeKey, isActive])
+  @@index([matchKey, isActive])
+}
+
+model MonthlyBudgetSetting {
+  id           String   @id @default(cuid())
+  month        String   @unique
+  targetAmount Decimal  @db.Decimal(14, 2)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }

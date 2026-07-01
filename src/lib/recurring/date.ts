@@ -36,9 +36,22 @@ export function nextExpectedDate(lastPaidAt: Date, averageDay: number, now = new
   return buildSeoulDate(baseYear, baseMonth + 1, averageDay);
 }
 
-function buildSeoulDate(year: number, month: number, day: number) {
-  const targetYear = year + Math.floor((month - 1) / 12);
-  const normalizedMonth = ((month - 1) % 12) + 1;
+export function nextExpectedDateFromDay(day: number, now = new Date()) {
+  const today = seoulDateParts(now);
+  const candidate = buildSeoulDate(today.year, today.month, day);
+  const todayStart = buildSeoulDate(today.year, today.month, today.day);
+
+  if (candidate >= todayStart) {
+    return candidate;
+  }
+
+  return buildSeoulDate(today.year, today.month + 1, day);
+}
+
+export function buildSeoulDate(year: number, month: number, day: number) {
+  const monthIndex = month - 1;
+  const targetYear = year + Math.floor(monthIndex / 12);
+  const normalizedMonth = ((monthIndex % 12) + 12) % 12 + 1;
   const lastDay = new Date(Date.UTC(targetYear, normalizedMonth, 0)).getUTCDate();
   const normalizedDay = Math.min(Math.max(1, Math.round(day)), lastDay);
   return new Date(

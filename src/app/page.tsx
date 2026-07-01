@@ -1,11 +1,15 @@
 import {
+  AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
   CalendarClock,
+  ChevronRight,
   Repeat2,
   ReceiptText,
   TrendingUp,
 } from "lucide-react";
+import Link from "next/link";
+import { BudgetProgress } from "@/components/dashboard/budget-progress";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { SpendingBars } from "@/components/dashboard/spending-bars";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,10 +27,12 @@ export default async function DashboardPage() {
     categorySpending,
     recurringExpenses,
     recurringMonthlyTotal,
+    budgetReport,
     sourceSummary,
     topMerchants,
     recentTransactions,
     dailySpending,
+    attentionItems,
     lastSyncAt,
   } = await getDashboardReport();
 
@@ -43,6 +49,42 @@ export default async function DashboardPage() {
           {lastSyncAt ? `마지막 동기화 ${lastSyncAt.toLocaleString("ko-KR")}` : "동기화 대기 중"}
         </div>
       </div>
+
+      {attentionItems.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>오늘 확인할 항목</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-2 lg:grid-cols-2">
+              {attentionItems.map((item) => (
+                <Link
+                  key={item.id}
+                  href={item.href}
+                  className="grid grid-cols-[20px_minmax(0,1fr)_20px] items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-muted"
+                >
+                  <AlertTriangle
+                    className={
+                      item.tone === "danger"
+                        ? "h-4 w-4 text-destructive"
+                        : item.tone === "warning"
+                          ? "h-4 w-4 text-amber-600"
+                          : "h-4 w-4 text-muted-foreground"
+                    }
+                  />
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{item.title}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {item.description}
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
@@ -65,15 +107,17 @@ export default async function DashboardPage() {
         />
         <MetricCard
           icon={Repeat2}
-          label="고정 지출 후보"
+          label="관리 중인 고정지출"
           value={formatCurrency(recurringMonthlyTotal)}
           helper={
             recurringExpenses.length > 0
-              ? `${recurringExpenses.length}개 반복 결제 감지`
-              : "반복 결제 후보 없음"
+              ? `${recurringExpenses.length}개 주요 항목 표시`
+              : "관리 중인 항목 없음"
           }
         />
       </section>
+
+      <BudgetProgress report={budgetReport} />
 
       <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <Card>
@@ -113,13 +157,13 @@ export default async function DashboardPage() {
       <section className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>고정 지출 후보</CardTitle>
+            <CardTitle>고정 지출</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
               {recurringExpenses.length === 0 ? (
                 <div className="rounded-md border px-3 py-6 text-center text-sm text-muted-foreground">
-                  최근 4개월 기준 반복 결제 후보가 없습니다.
+                  관리 중이거나 자동 감지된 고정지출이 없습니다.
                 </div>
               ) : recurringExpenses.map((expense) => (
                 <div
@@ -135,7 +179,7 @@ export default async function DashboardPage() {
                         style={{ backgroundColor: expense.categoryColor }}
                       />
                       <span className="truncate">
-                        {expense.category} · 최근 {expense.monthCount}개월 반복
+                        {expense.category} · {expense.sourceType === "manual" ? "직접 등록" : `최근 ${expense.monthCount}개월 반복`}
                       </span>
                     </div>
                   </div>
